@@ -29,10 +29,14 @@ def calculate_split_masks(data, num_classes = 5):
             test_mask[test_indices] = True
         return train_mask, val_mask, test_mask
 
-def load_texas_data():
+def load_data(dataset_name: str, split = [0.7, 0.1, 0.2]):
+
+    assert dataset_name in ['texas', 'cornell', 'wisconsin'], "Dataset not supported."
+    assert sum(split) == 1.0, "Splits must sum to 1.0"
+
     dataset = WebKB(
         root="../dataset/WebKB",
-        name="Texas",
+        name=dataset_name,
         transform=NormalizeFeatures(),
     )
     data: Data = dataset[0]
@@ -49,7 +53,7 @@ def load_texas_data():
 
     train_mask, val_mask, test_mask = calculate_split_masks(data)
 
-    print(f"Texas | num_nodes={num_nodes} | num_classes={num_classes}")
+    print(f"{dataset_name.capitalize()} | num_nodes={num_nodes} | num_classes={num_classes}")
     print(
         f"Train={int(train_mask.sum())}, "
         f"val={int(val_mask.sum())}, test={int(test_mask.sum())}"
@@ -66,3 +70,5 @@ def load_texas_data():
     print("class_weights:", class_weights.tolist())
 
     return data, train_mask, val_mask, test_mask, num_classes, class_weights
+
+
