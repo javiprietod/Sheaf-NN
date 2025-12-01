@@ -3,3 +3,5 @@ documentation/
 .venv/
 /dataset
 __pycache__
+
+latex/

@@ -63,14 +63,32 @@ def load_data(dataset_name: str, split=[0.7, 0.2, 0.1]):
         f"val={int(val_mask.sum())}, test={int(test_mask.sum())}"
     )
 
-    # Pesos de clase (para evitar colapso en la clase 3)
     train_labels = data.y[train_mask]
+
     class_counts = torch.bincount(train_labels, minlength=num_classes).float()
+    total = class_counts.sum()
+    threshold = 0.05 * total
+
+    mask = class_counts >= threshold
+
+    # Set weights to zero for discarded classes
+    class_weights = torch.zeros_like(class_counts)
+
+    # Compute weights only on retained classes
+    kept_counts = class_counts[mask]
     eps = 1e-6
-    class_weights = class_counts.sum() / (class_counts + eps)
-    class_weights = class_weights / class_weights.mean()
+    kept_weights = kept_counts.sum() / (kept_counts + eps)
+
+    # Normalise weights only among retained classes
+    kept_weights = kept_weights / kept_weights.mean()
+
+    # Insert into full tensor
+    class_weights[mask] = kept_weights
+
     class_weights = class_weights.to(device)
+
     print("class_counts:", class_counts.tolist())
+    print("mask_kept_classes:", mask.tolist())
     print("class_weights:", class_weights.tolist())
 
     return data, train_mask, val_mask, test_mask, num_classes, class_weights
