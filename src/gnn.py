@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, MixHopConv
+from torch_geometric.nn import MixHopConv
 
 
 class MixHopNet(torch.nn.Module):

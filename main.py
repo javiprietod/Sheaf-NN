@@ -1,16 +1,15 @@
+import warnings
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
-from torch_geometric.datasets import WebKB
-from torch_geometric.transforms import NormalizeFeatures
 from torch_geometric.data import Data
 
-from src.sheaf import CSNN
+from src.csnn import CSNN
+from src.load_data import load_data
 from src.utils import accuracy
-from src.load_data import load_texas_data
 
+warnings.filterwarnings("ignore")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(42)
@@ -19,25 +18,26 @@ torch.manual_seed(42)
 # Entrenamiento en WebKB–Texas (splits oficiales Pei et al.)
 # ---------------------------------------------------------
 
-def main():
 
+def main():
     # Cargar dataset Texas
     data: Data
-    data, train_mask, val_mask, test_mask, num_classes, class_weights = load_texas_data()
-
+    data, train_mask, val_mask, test_mask, num_classes, class_weights = load_data(
+        "texas"
+    )
+    print()
 
     torch.manual_seed(42)
     # Modelo CSNN
     model = CSNN(
         in_dim=data.x.size(-1),
-        hidden_dim=64,           # prueba también 64
+        hidden_dim=64,
         out_dim=num_classes,
         num_nodes=data.num_nodes,
         edge_index=data.edge_index,
-        num_layers=2,            # el paper suele usar bastantes capas
+        num_layers=2,
         dropout=0.5,
     ).to(device)
-
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -46,18 +46,14 @@ def main():
     )
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     lr_scheduler = ReduceLROnPlateau(
-        optimizer,
-        mode='max',
-        factor=0.5,
-        patience=100,
-        min_lr=1e-5
-    )
+        optimizer, mode="max", factor=0.5, patience=100, min_lr=1e-5
+    )  # metric: val accuracy
 
     # Entrenamiento con early stopping
     best_test_acc = 0.0
     best_state = None
-    max_epochs = 500
-    
+    max_epochs = 100
+
     for epoch in range(1, max_epochs + 1):
         model.train()
         optimizer.zero_grad()
@@ -94,22 +90,29 @@ def main():
     if best_state is not None:
         model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
 
+    # Evaluación final
     model.eval()
     with torch.no_grad():
         out = model(data.x)
-        final_train = accuracy(out[train_mask], data.y[train_mask])
-        final_val = accuracy(out[val_mask], data.y[val_mask])
-        final_test = accuracy(out[test_mask], data.y[test_mask])
+        final_train_acc = accuracy(out[train_mask], data.y[train_mask])
+        final_val_acc = accuracy(out[val_mask], data.y[val_mask])
+        final_test_acc = accuracy(out[test_mask], data.y[test_mask])
 
     print(
-        f"train {final_train:.4f} | val {final_val:.4f} | test {final_test:.4f}"
+        f"Final | "
+        f"train acc {final_train_acc:.4f} | val acc {final_val_acc:.4f} | test acc {final_test_acc:.4f} |\n"
     )
 
-    # Distribución de predicciones (para ver si colapsa en clase 3)
-    preds = out.argmax(dim=-1)
-    for name, mask in [("train", train_mask), ("test", test_mask)]:
-        dist = torch.bincount(preds[mask], minlength=num_classes)
-        print(f"{name} pred distribution:", torch.tensor(dist.tolist()) / dist.sum().item())
+    # Accuracy per class
+    pred = out.argmax(dim=1)
+    for class_label in range(num_classes):
+        class_indices = (data.y == class_label).nonzero(as_tuple=True)[0]
+        class_correct = (pred[class_indices] == data.y[class_indices]).sum().item()
+        class_total = class_indices.size(0)
+        class_acc = class_correct / class_total if class_total > 0 else 0.0
+        print(
+            f"Class {class_label}: Accuracy {class_acc:.4f} ({class_correct}/{class_total})"
+        )
 
 
 if __name__ == "__main__":

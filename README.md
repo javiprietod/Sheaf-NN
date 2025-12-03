@@ -1,40 +1,41 @@
 # Sheaf-NN
-A repository benchmarking the State-of-the-Art (SOTA) in Sheaf Neural Networks against the SOTA in Graph Neural Networks.
 
-## Overview
+This repository provides an implementation of Cooperative Sheaf Neural Networks (CSNNs) as introduced by Ribeiro et al. (2025). It includes baseline comparisons with a MixHop Graph Neural Network (MH-GNN) on the WebKB dataset and a visual study of separating capacity on a synthetic dataset.
 
-Sheaf Neural Networks represent an emerging paradigm in geometric deep learning that leverages the mathematical framework of cellular sheaves to model complex relational data on graphs. This repository provides a benchmarking framework to compare the performance of Sheaf Neural Networks against traditional Graph Neural Networks (GNNs).
+<!-- ## Installation
 
-## Features
+To install the required dependencies, run:
 
-- Benchmarking framework for comparing Sheaf Neural Networks and Graph Neural Networks
-- Integration with Open Graph Benchmark (OGB) datasets
-- Built on PyTorch and PyTorch Geometric for efficient graph-based computations
+```bash
+uv sync
+``` -->
 
-## Requirements
-
-- Python >= 3.10
-- PyTorch >= 2.5.1
-- PyTorch Geometric >= 2.0.2
-- OGB (Open Graph Benchmark) 1.3.6
-- NumPy >= 1.16.0
-- pandas >= 0.24.0
-- scikit-learn >= 0.20.0
+<!-- https://docs.astral.sh/uv/getting-started/installation/#standalone-installer -->
+<!-- Refer also to the installation of uv-->
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/javiprietod/Sheaf-NN.git
-   cd Sheaf-NN
-   ```
+To install the required dependencies, use the `uv` package manager (see [uv documentation](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer) for installation instructions). Once `uv` is installed, run:
 
-2. Create a virtual environment and install dependencies using `uv`:
-   ```bash
-   uv venv
-   uv sync
-   ```
+```bash
+uv sync
+```
 
 ## Usage
 
-The jupyter notebook in which we showcase the benchmarking is `comparative.ipynb`. 
+To run the main script for training and evaluating the CSNN model, execute:
+
+```bash
+python main.py
+```
+
+The repository includes Jupyter notebooks demonstrating the performance of CSNNs on the WebKB dataset and a synthetic dataset. You can find them in the `notebooks` directory:
+
+- `notebooks/webkb`: Demonstrates CSNNs on the WebKB dataset.
+- `notebooks/synthetic`: Visualizes the separating power of SNNs vs GNNs on a synthetic dataset.
+
+## References
+
+- Abu-El-Haija, S., et al. (2020). "MixHop: Higher-Order Graph Convolutional Architectures via Sparsified Neighborhood Mixing." [arXiv:1905.00067](https://arxiv.org/abs/1905.00067)
+- Bodnar, C., et al. (2023). "Neural Sheaf Diffusion: A Topological Perspective on Heterophily and Oversmoothing in GNNs." [arXiv:2202.04579](https://arxiv.org/abs/2202.04579)
+- Ribeiro, A., et al. (2025). "Cooperative Sheaf Neural Networks." [arXiv:2507.00647](https://arxiv.org/abs/2507.00647)

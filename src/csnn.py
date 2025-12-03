@@ -6,24 +6,25 @@ import torch.nn.functional as F
 # Capa CSNN: sheaf dirigido + comportamiento cooperativo
 # ---------------------------------------------------------
 
+
 class CSNNLayer(nn.Module):
     """
-    Capa de Cooperative Sheaf Neural Network (CSNN), inspirada en Ribeiro et al. (2025).
+    Cooperative Sheaf Neural Network (CSNN) layer, inspired by Ribeiro et al. (2025).
 
-    - Grafo dirigido: edge_index[0] -> edge_index[1]
-    - Para cada nodo i se aprenden:
-        * v_src[i]  -> genera mapa ortogonal Q_src[i] (Householder)
-        * v_tgt[i]  -> genera mapa ortogonal Q_tgt[i]
-        * alpha_src[i] >= 0  (escala de S_i)
-        * alpha_tgt[i] >= 0  (escala de T_i)
-      y se definen mapas conformes:
+    - Directed graph: edge_index[0] -> edge_index[1]
+    - For each node i we learn:
+        * v_src[i]  -> produces orthogonal map Q_src[i] (Householder)
+        * v_tgt[i]  -> produces orthogonal map Q_tgt[i]
+        * alpha_src[i] >= 0  (scale for S_i)
+        * alpha_tgt[i] >= 0  (scale for T_i)
+      and define conformal maps:
         S_i = s_i * Q_src[i],   T_i = t_i * Q_tgt[i]
 
-    - Se construyen dos Laplacianos de haz:
-        L_out(x)      : difusión usando S (out-degree)
-        L_in_T(x)     : difusión usando T (transpose del in-degree, aproximado)
+    - Two sheaf Laplacians are constructed:
+        L_out(x)  : diffusion using S (out-degree)
+        L_in_T(x) : diffusion using T (approximate transpose of in-degree)
 
-    - Actualización de la capa:
+    - Layer update rule:
         x' = x - eps_out * W_out(L_out(x)) - eps_in * W_in(L_in_T(x))
         x' = phi( W_feat(x') )
     """
@@ -60,29 +61,31 @@ class CSNNLayer(nn.Module):
 
     def _conformal_maps(self, x):
         """
-        Construye S_i y T_i a partir de Householder + escalas.
-        Devuelve:
+        Build S_i and T_i from Householder reflections and scales.
+        Returns:
             S: [n, d, d]
             T: [n, d, d]
         """
         device = x.device
         n, d = self.num_nodes, self.dim
 
-        I = torch.eye(d, device=device).unsqueeze(0).expand(n, -1, -1)  # [n, d, d]
+        I_tensor = (
+            torch.eye(d, device=device).unsqueeze(0).expand(n, -1, -1)
+        )  # [n, d, d]
 
         # --- Source maps S_i ---
         v = self.v_src
-        v = v / (v.norm(dim=-1, keepdim=True) + 1e-6)           # [n, d]
-        vvT = torch.einsum("ni,nj->nij", v, v)                  # [n, d, d]
-        Q_src = I - 2.0 * vvT                                   # [n, d, d] (Householder)
-        s = F.softplus(self.alpha_src).view(n, 1, 1)            # [n,1,1] escala positiva
-        S = s * Q_src                                           # [n, d, d]
+        v = v / (v.norm(dim=-1, keepdim=True) + 1e-6)  # [n, d]
+        vvT = torch.einsum("ni,nj->nij", v, v)  # [n, d, d]
+        Q_src = I_tensor - 2.0 * vvT  # [n, d, d] (Householder)
+        s = F.softplus(self.alpha_src).view(n, 1, 1)  # [n,1,1] escala positiva
+        S = s * Q_src  # [n, d, d]
 
         # --- Target maps T_i ---
         v = self.v_tgt
         v = v / (v.norm(dim=-1, keepdim=True) + 1e-6)
         vvT = torch.einsum("ni,nj->nij", v, v)
-        Q_tgt = I - 2.0 * vvT
+        Q_tgt = I_tensor - 2.0 * vvT
         t = F.softplus(self.alpha_tgt).view(n, 1, 1)
         T = t * Q_tgt
 
@@ -90,19 +93,19 @@ class CSNNLayer(nn.Module):
 
     def sheaf_L_out(self, x, S):
         """
-        L_out(x) usando mapas S (out-degree sheaf Laplacian, normalizado).
-        Acumula contribuciones en el nodo source de cada arista.
+        L_out(x) using S maps (out-degree sheaf Laplacian, normalized).
+        Accumulates contributions at the source node of each edge.
         """
         src, dst = self.edge_index
-        x_src = x[src]              # [E, d]
-        x_dst = x[dst]              # [E, d]
-        S_src = S[src]              # [E, d, d]
-        S_dst = S[dst]              # [E, d, d]
+        x_src = x[src]  # [E, d]
+        x_dst = x[dst]  # [E, d]
+        S_src = S[src]  # [E, d, d]
+        S_dst = S[dst]  # [E, d, d]
 
         # Transporte: S_i^T S_j x_j
-        Sj_xj = torch.einsum("eoi,ei->eo", S_dst, x_dst)              # [E, d]
+        Sj_xj = torch.einsum("eoi,ei->eo", S_dst, x_dst)  # [E, d]
         Sj_xj_to_i = torch.einsum("eio,eo->ei", S_src.transpose(1, 2), Sj_xj)
-        contrib = x_src - Sj_xj_to_i                                  # [E, d]
+        contrib = x_src - Sj_xj_to_i  # [E, d]
 
         out = x.new_zeros(x.size(0), x.size(1))
         out.index_add_(0, src, contrib)
@@ -114,19 +117,19 @@ class CSNNLayer(nn.Module):
 
     def sheaf_L_in_T(self, x, T):
         """
-        L_in^T(x) aproximado usando mapas T.
-        Acumula contribuciones en el nodo destino de cada arista.
+        Approximate L_in^T(x) using T maps.
+        Accumulates contributions at the destination node of each edge.
         """
         src, dst = self.edge_index
-        x_src = x[src]              # [E, d]
-        x_dst = x[dst]              # [E, d]
-        T_src = T[src]              # [E, d, d]
-        T_dst = T[dst]              # [E, d, d]
+        x_src = x[src]  # [E, d]
+        x_dst = x[dst]  # [E, d]
+        T_src = T[src]  # [E, d, d]
+        T_dst = T[dst]  # [E, d, d]
 
         # Transporte "inverso": T_j^T T_i x_i
-        Ti_xi = torch.einsum("eoi,ei->eo", T_src, x_src)              # [E, d]
+        Ti_xi = torch.einsum("eoi,ei->eo", T_src, x_src)  # [E, d]
         Ti_xi_to_j = torch.einsum("eio,eo->ei", T_dst.transpose(1, 2), Ti_xi)
-        contrib = x_dst - Ti_xi_to_j                                  # [E, d]
+        contrib = x_dst - Ti_xi_to_j  # [E, d]
 
         out = x.new_zeros(x.size(0), x.size(1))
         out.index_add_(0, dst, contrib)
@@ -138,9 +141,9 @@ class CSNNLayer(nn.Module):
 
     def forward(self, x):
         """
-        x : [num_nodes, dim]
+        x: [num_nodes, dim]
         """
-        S, T = self._conformal_maps(x)           # [n, d, d] cada uno
+        S, T = self._conformal_maps(x)  # [n, d, d] cada uno
 
         L_out_x = self.sheaf_L_out(x, S)
         L_inT_x = self.sheaf_L_in_T(x, T)
@@ -159,12 +162,13 @@ class CSNNLayer(nn.Module):
 # Red CSNN completa
 # ---------------------------------------------------------
 
+
 class CSNN(nn.Module):
     """
-    CSNN para clasificación de nodos:
-      - Proyección inicial a hidden_dim.
-      - L capas CSNNLayer.
-      - Clasificador linear final.
+    CSNN for node classification:
+        - initial projection to `hidden_dim`.
+        - L `CSNNLayer` layers.
+        - final linear classifier.
     """
 
     def __init__(
